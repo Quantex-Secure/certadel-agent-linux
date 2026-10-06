@@ -1,0 +1,62 @@
+name: Build
+
+# Builds the x64 and arm64 tarballs on every push/PR. Pushing a tag vX.Y.Z builds with
+# that version and publishes a GitHub Release with both tarballs attached.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  tarball:
+    name: Build tarballs
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: core/global.json
+
+      - name: Resolve version
+        id: version
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_TYPE -eq 'tag') { $v = $env:GITHUB_REF_NAME.TrimStart('v') }
+          else { $v = (dotnet msbuild core/src/AcmeManager.Service/AcmeManager.Service.csproj -getProperty:VersionPrefix -nologo).Trim() }
+          "value=$v" >> $env:GITHUB_OUTPUT
+
+      - name: Build linux-x64
+        shell: pwsh
+        run: ./packaging/build-linux.ps1 -Version ${{ steps.version.outputs.value }} -Runtime linux-x64
+
+      - name: Build linux-arm64
+        shell: pwsh
+        run: ./packaging/build-linux.ps1 -Version ${{ steps.version.outputs.value }} -Runtime linux-arm64
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: certadel-agent-linux-${{ steps.version.outputs.value }}
+          path: artifacts/*.tar.gz
+
+      - name: Publish release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" artifacts/*.tar.gz --title "Certadel Agent for Linux $GITHUB_REF_NAME" --generate-notes

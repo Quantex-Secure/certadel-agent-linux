@@ -1,0 +1,24 @@
+[Unit]
+Description=acme-manager - automated TLS certificate management (ACME)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# The agent calls AddSystemd(), so it signals readiness (sd_notify) and logs to journald.
+Type=notify
+ExecStart=/opt/acme-manager/AcmeManager.Service
+WorkingDirectory=/opt/acme-manager
+Restart=on-failure
+RestartSec=10
+# Runs as root: it writes certs into system locations (/etc/haproxy, /etc/ssl, Tomcat
+# conf), reloads services via systemctl, and verifies logins via PAM. Same posture as
+# certbot/acme.sh. Data and keys live under /var/lib/acme-manager.
+User=root
+# Linux is not domain-joined: use Basic + PAM/cookie auth, never Windows Negotiate.
+Environment=Auth__EnableNegotiate=false
+# Hardening that's safe for a root daemon writing to system paths.
+NoNewPrivileges=false
+ProtectSystem=false
+
+[Install]
+WantedBy=multi-user.target
